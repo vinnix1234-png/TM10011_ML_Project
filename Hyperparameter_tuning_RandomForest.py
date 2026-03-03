@@ -7,6 +7,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier
 
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import roc_curve, roc_auc_score
+
 # --- data ---
 df = pd.read_csv("worclipo/Lipo_radiomicFeatures.csv")
 df.columns = df.columns.str.strip()
@@ -50,3 +55,30 @@ gs_rf.fit(X, y)
 print("=== BEST RandomForest ===")
 print("Best CV AUC:", gs_rf.best_score_)
 print("Best params:", gs_rf.best_params_)
+
+
+
+# --- Out-of-fold predicted probabilities for ROC curve (no leakage) ---
+y_proba_oof = cross_val_predict(
+    gs_rf.best_estimator_,  # best RF pipeline
+    X, y,
+    cv=cv,
+    method="predict_proba",
+    n_jobs=-1
+)[:, 1]
+
+auc_oof = roc_auc_score(y, y_proba_oof)
+fpr, tpr, _ = roc_curve(y, y_proba_oof)
+
+print("\n=== OUT-OF-FOLD ROC AUC ===")
+print("OOF AUC:", auc_oof)
+
+plt.figure()
+plt.plot(fpr, tpr, label=f"RandomForest (OOF AUC = {auc_oof:.3f})")
+plt.plot([0, 1], [0, 1], linestyle="--", label="Chance")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve (Out-of-Fold)")
+plt.legend(loc="lower right")
+plt.grid(True)
+plt.show()
