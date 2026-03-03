@@ -8,7 +8,6 @@ from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
-
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
