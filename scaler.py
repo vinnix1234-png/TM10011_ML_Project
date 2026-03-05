@@ -24,14 +24,14 @@ y = (y_raw == ziek).astype(int)
 print("sick patients", (y == 1).sum())
 
 #scaler = StandardScaler()
-#scaler = RobustScaler()
+scaler = RobustScaler()
 #scaler =PowerTransformer
 
 
-#X_scaled = scaler.fit_transform(X)  # deze is het beste van de keuze uit de college's
+X_scaled = scaler.fit_transform(X)  # deze is het beste van de keuze uit de college's
 
-pt = PowerTransformer(method="yeo-johnson", standardize=True)   # deze is blijkbaar het beste voor onze data ) 
-X_scaled = pt.fit_transform(X)
+#pt = PowerTransformer(method="yeo-johnson", standardize=True)   # deze is blijkbaar het beste voor onze data ) 
+#X_scaled = pt.fit_transform(X)
 
 
 # tadaa dit is scalen .... er zijn wel een paar verschillende maar vgm is de standaard het beste
