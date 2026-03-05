@@ -9,6 +9,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+import matplotlib.pyplot as plt
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import roc_curve, roc_auc_score
 
 # --- data ---
 df = pd.read_csv("worclipo/Lipo_radiomicFeatures.csv")
@@ -56,9 +59,7 @@ print("=== BEST ElasticNet LogisticRegression ===")
 print("Best CV AUC:", gs_lr.best_score_)
 print("Best params:", gs_lr.best_params_)
 
-import matplotlib.pyplot as plt
-from sklearn.model_selection import cross_val_predict
-from sklearn.metrics import roc_curve, roc_auc_score
+
 
 # --- ROC curve (out-of-fold) for the best tuned model ---
 y_proba_oof = cross_val_predict(

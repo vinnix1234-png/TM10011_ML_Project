@@ -24,8 +24,8 @@ y = (y_raw == ziek).astype(int)
 print("sick patients", (y == 1).sum())
 
 #scaler = StandardScaler()
-#scaler = RobustScaler 
-scaler =PowerTransformer
+#scaler = RobustScaler()
+#scaler =PowerTransformer
 
 
 #X_scaled = scaler.fit_transform(X)  # deze is het beste van de keuze uit de college's
@@ -57,3 +57,18 @@ plt.ylabel(col)
 plt.title("Orig vs scaled (StandardScaler)")
 plt.tight_layout()
 plt.show()
+
+
+# --- SAVE SCALED DATA TO CSV ---
+
+# maak er weer een DataFrame van met dezelfde kolomnamen
+X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns, index=df.index)
+
+# zet ID en label terug erbij (handig voor later)
+out_df = pd.concat([df[["ID", "label"]], X_scaled_df], axis=1)
+
+# pad/naam aanpassen als je wil
+out_path = "worclipo/Lipo_radiomicFeatures_scaled_powertransform.csv"
+out_df.to_csv(out_path, index=False)
+
+print("Saved scaled dataset to:", out_path)
