@@ -24,6 +24,8 @@ variances = data.select_dtypes(include="number").var()
 zero_var_cols = variances[variances == 0].index
 data_drop = data.drop(columns=zero_var_cols)
 variances_drop = variances.drop(columns=zero_var_cols)
-print(data_drop.columns)
+print(data_drop)
 percentage = (variances_drop / variances_drop.sum()) * 100
 print(percentage)
+print(percentage[percentage >= 0.1])
+#print(variances_drop.sort_values(ascending=False))
