@@ -97,7 +97,10 @@ extra_classifiers = {
     "Ridge Classifier": RidgeClassifier(class_weight='balanced'),
     "AdaBoost": AdaBoostClassifier(n_estimators=100, random_state=42)
 }
-
+# CatBoost and extra trees erbij?
+# Rigdeclassifier is zelfde als L2? Wel andere waarden eruit
+# zie chatgpt voor Nested CV
+# Misschien nog voting (verschillende classifiers combineren) / bagging (RandomForest idee al) toevoegen. 
 
 for name, classifier in extra_classifiers.items():
     # Pipeline voor eerst schalen en dan classifier toepassen
@@ -105,7 +108,7 @@ for name, classifier in extra_classifiers.items():
         ("scaler", StandardScaler()),
         ("feature selection", SelectKBest(f_classif, k=20)),  # PCA(n_components=20), reduceer naar 20 features
         ("classifier", classifier)
-    ])
+    ]) # misshcine nog de huperparameter tuning simpel hier al bij zoeken?
 
     scores = cross_val_score(pipe, X, y_encoded, cv=5, scoring="roc_auc")
 

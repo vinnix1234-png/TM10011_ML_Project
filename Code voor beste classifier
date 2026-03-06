@@ -1,0 +1,126 @@
+#%% Data Loading as a DataFrame
+# Data Loading as a DataFrame
+from worclipo.load_data import load_data
+
+data = load_data()
+
+print(f'The number of samples: {len(data.index)}')
+print(f'The number of columns: {len(data.columns)}')
+print(data.columns)
+# Opbouw Columns: [PREDICT]_[original]_[featuregroep]_[maat]_[statistiek]_[dimensie/filter]
+
+#%% Class voor beste classifier selectie
+class BestClassifierSelection: 
+    def __init__(self, classifier_list, labels, features, scaler, feature_selection, k_fold, scoring_method):
+        from sklearn.preprocessing import LabelEncoder
+        
+        # Variabelen opslaan in de class
+        self.classifier_list = classifier_list
+        self.X = features
+        self.y = labels
+        self.scaler = scaler
+        self.feature_selection = feature_selection
+        self.cv = k_fold
+        self.scoring = scoring_method
+
+        # Zet label om in getal, dus lipoma=0, liposarcoma=1
+        self.label_encoder = LabelEncoder()
+        self.y_encoded = self.label_encoder.fit_transform(self.y)
+
+        # Resultaten opslaan
+        self.results = {}
+
+    def run_classifiers(self):
+        from sklearn.pipeline import Pipeline
+        from sklearn.model_selection import cross_val_score
+        from sklearn.feature_selection import VarianceThreshold
+        
+        cleaner_variance = VarianceThreshold(threshold=0)
+
+        for name, classifier in self.classifier_list.items():
+            pipe = Pipeline([
+                ("cleaner_var", cleaner_variance),
+                ("scaler", self.scaler),
+                ("feature selection", self.feature_selection),
+                ("classifier", classifier)
+            ])
+
+            scores = cross_val_score(pipe, self.X, self.y_encoded, cv=self.cv, scoring=self.scoring)
+            self.results[name] = scores.mean()
+
+    def get_results(self):
+        return sorted(self.results.items(), key=lambda x: x[1], reverse=True)
+
+
+#%% Import classifiers
+# Import classifiers
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, ExtraTreesClassifier
+from xgboost import XGBClassifier       # Gradient boosting (XGBoost, LightGBM, CatBoost)
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
+from sklearn.svm import SVC             # Support Vector Machines (SVM)
+from sklearn.linear_model import RidgeClassifier    # Extra lineaire modellen
+
+# Dictionary met alle classifiers
+classifiers = {
+    "Naive Bayes": GaussianNB(),
+    "Linear Discriminant": LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto'),
+    "Quadratic Discriminant": QuadraticDiscriminantAnalysis(),
+    "Stochastic Gradient Descent": SGDClassifier(),
+    "Decision Tree": DecisionTreeClassifier(),
+    "K-Nearest Neighbour": KNeighborsClassifier(),
+    "Random Forrest": RandomForestClassifier(max_depth=5, n_estimators=100, random_state=42, class_weight='balanced'),
+    "Support Vector Machines": SVC(kernel='linear', probability=True, class_weight='balanced'),
+    "XGBoost": XGBClassifier(max_depth=5, n_estimators=100, learning_rate=0.05, eval_metric='logloss', random_state=42, verbosity=0),
+    "LightGBM": LGBMClassifier(max_depth=5, n_estimators=100, learning_rate=0.05, random_state=42, class_weight='balanced', num_leaves=20, min_child_samples=5, verbose=-1),
+    "Logistic Regression - L1": LogisticRegression(l1_ratio=1, solver='liblinear', class_weight='balanced', max_iter=1000),
+    "Logistic Regression - L2": LogisticRegression(l1_ratio=0, C=1, class_weight='balanced', max_iter=1000),
+    "Logistic Regression - Elasticnet": LogisticRegression(penalty='elasticnet', l1_ratio=0.5, solver='saga', C=1, class_weight='balanced', max_iter=1000, random_state=42),
+    "Ridge Classifier": RidgeClassifier(class_weight='balanced'),
+    "AdaBoost": AdaBoostClassifier(n_estimators=100, random_state=42),
+    "Extra Trees": ExtraTreesClassifier(n_estimators=100, random_state=42, class_weight='balanced'),
+    "CatBoost": CatBoostClassifier(iterations=100, depth=5, learning_rate=0.05, random_state=42, verbose=0)
+}
+
+#%%
+# Import packages
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+from sklearn.preprocessing import StandardScaler, PowerTransformer, RobustScaler
+from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest, f_classif, VarianceThreshold
+
+# data opslitsen in labels en features
+labels = data.iloc[:, 0]
+features = data.iloc[:, 1:]
+
+# # Features met 0 variantie eruit halen
+# cleaner_variance = VarianceThreshold(threshold=0)   # Verwijdert features met 0 variantie
+# features_clean_var = pd.DataFrame(cleaner_variance.fit_transform(features))
+
+# Variabelen voor de class
+classifier_list = classifiers
+scaler = PowerTransformer()
+feature_selection = SelectKBest(f_classif, k=20)
+k_fold = 5
+scoring_method = "roc_auc"
+
+# Class aanroepen
+best_classifier = BestClassifierSelection(classifier_list, labels, features_clean_var, scaler, feature_selection, k_fold, scoring_method)
+best_classifier.run_classifiers()
+for name, score in best_classifier.get_results():
+    if np.isnan(score):
+        print(f"{name}: NaN")
+    else:
+        print(f"{name}: {score:.4f}")
+
+
+# %%
