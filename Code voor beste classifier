@@ -34,6 +34,7 @@ class BestClassifierSelection:
         from sklearn.pipeline import Pipeline
         from sklearn.model_selection import cross_val_score
         from sklearn.feature_selection import VarianceThreshold
+        from sklearn.base import clone
         
         cleaner_variance = VarianceThreshold(threshold=0)
 
@@ -41,15 +42,20 @@ class BestClassifierSelection:
             pipe = Pipeline([
                 ("cleaner_var", cleaner_variance),
                 ("scaler", self.scaler),
-                ("feature selection", self.feature_selection),
+                ("feature selection", self.feature_selection), #SelectFromModel(clone(classifier))), #RFE(clone(classifier), n_features_to_select=20)),
                 ("classifier", classifier)
             ])
 
-            scores = cross_val_score(pipe, self.X, self.y_encoded, cv=self.cv, scoring=self.scoring)
-            self.results[name] = scores.mean()
+            try:
+                scores = cross_val_score(pipe, self.X, self.y_encoded, cv=self.cv, scoring=self.scoring)
+                self.results[name] = scores.mean()
+            except Exception as e:
+                print(f"{name} gefaald: {e}")
+                self.results[name] = float('nan')
 
     def get_results(self):
-        return sorted(self.results.items(), key=lambda x: x[1], reverse=True)
+        sorted_results = sorted(self.results.items(), key=lambda x: x[1], reverse=True)
+        return pd.DataFrame(sorted_results, columns=["Classifier", "AUC score"])
 
 
 #%% Import classifiers
@@ -71,11 +77,11 @@ from sklearn.linear_model import RidgeClassifier    # Extra lineaire modellen
 classifiers = {
     "Naive Bayes": GaussianNB(),
     "Linear Discriminant": LinearDiscriminantAnalysis(solver='eigen', shrinkage='auto'),
-    "Quadratic Discriminant": QuadraticDiscriminantAnalysis(),
+    "Quadratic Discriminant": QuadraticDiscriminantAnalysis(reg_param=0.1),
     "Stochastic Gradient Descent": SGDClassifier(),
     "Decision Tree": DecisionTreeClassifier(),
     "K-Nearest Neighbour": KNeighborsClassifier(),
-    "Random Forrest": RandomForestClassifier(max_depth=5, n_estimators=100, random_state=42, class_weight='balanced'),
+    "Random Forest": RandomForestClassifier(max_depth=5, n_estimators=100, random_state=42, class_weight='balanced'),
     "Support Vector Machines": SVC(kernel='linear', probability=True, class_weight='balanced'),
     "XGBoost": XGBClassifier(max_depth=5, n_estimators=100, learning_rate=0.05, eval_metric='logloss', random_state=42, verbosity=0),
     "LightGBM": LGBMClassifier(max_depth=5, n_estimators=100, learning_rate=0.05, random_state=42, class_weight='balanced', num_leaves=20, min_child_samples=5, verbose=-1),
@@ -96,31 +102,30 @@ import pandas as pd
 
 from sklearn.preprocessing import StandardScaler, PowerTransformer, RobustScaler
 from sklearn.decomposition import PCA
-from sklearn.feature_selection import SelectKBest, f_classif, VarianceThreshold
+from sklearn.feature_selection import SelectKBest, f_classif, VarianceThreshold, RFE, SelectFromModel
+from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 
 # data opslitsen in labels en features
 labels = data.iloc[:, 0]
 features = data.iloc[:, 1:]
 
-# # Features met 0 variantie eruit halen
+# # Features met 0 variantie eruit halen, !!!!! staat nu al in de class !!!!!
 # cleaner_variance = VarianceThreshold(threshold=0)   # Verwijdert features met 0 variantie
 # features_clean_var = pd.DataFrame(cleaner_variance.fit_transform(features))
 
 # Variabelen voor de class
 classifier_list = classifiers
-scaler = PowerTransformer()
-feature_selection = SelectKBest(f_classif, k=20)
-k_fold = 5
+scaler = PowerTransformer() #PowerTransformer() # StandardScaler of RobustScaler of PowerTransformer
+feature_selection = SelectKBest(f_classif, k=20) #PCA(n_components=20) 
+k_fold = StratifiedKFold(n_splits=10, shuffle=True, random_state=42) #LeaveOneOut()
 scoring_method = "roc_auc"
 
 # Class aanroepen
-best_classifier = BestClassifierSelection(classifier_list, labels, features_clean_var, scaler, feature_selection, k_fold, scoring_method)
+best_classifier = BestClassifierSelection(classifier_list, labels, features, scaler, feature_selection, k_fold, scoring_method)
 best_classifier.run_classifiers()
-for name, score in best_classifier.get_results():
-    if np.isnan(score):
-        print(f"{name}: NaN")
-    else:
-        print(f"{name}: {score:.4f}")
+results_df = best_classifier.get_results()
+print(results_df.to_string(index=False))
 
+#%%
 
-# %%
+#%%
