@@ -91,13 +91,13 @@ pipeline = Pipeline([
 
 #%% Hyperparameters — bewust conservatief voor n=115
 param_dist = {
-    "selection__k":              [10, 15, 20],       # weinig features houden
+    "selection__k":              [10, 15, 20],     
     "model__n_estimators":       [200, 300, 500],
-    "model__max_depth":          [3, 4, 5],           # ondiep = minder overfit
-    "model__min_samples_split":  [10, 15, 20],        # hoog = minder overfit
-    "model__min_samples_leaf":   [6, 8, 10],          # hoog = minder overfit
-    "model__max_features":       ["sqrt", 0.2, 0.3],  # weinig features per split
-    "model__max_samples":        [0.7, 0.8],          # subsample van de traindata
+    "model__max_depth":          [3, 4, 5],          
+    "model__min_samples_split":  [10, 15, 20],        
+    "model__min_samples_leaf":   [6, 8, 10],          
+    "model__max_features":       ["sqrt", 0.2, 0.3],  
+    "model__max_samples":        [0.7, 0.8],          
 }
 
 #%% Nested CV
