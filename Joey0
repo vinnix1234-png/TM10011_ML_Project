@@ -1,0 +1,160 @@
+#X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.33, random_state=42)
+#clf = RandomizedSearchCV(RandomForestClassifier(), param_distributions, cv=5, n_iter=20, random_state=42)
+
+# random_state=42, zorgt ervoor dat elke keer hetzelfde verdeelt wordt, kan bij splitten, classifier, RandomizedSearchCV
+#%% Data Loading as a Pandas DataFrame
+# Data Loading as a Pandas DataFrame
+from worclipo.load_data import load_data
+
+data = load_data()
+
+print(f'The number of samples: {len(data.index)}')
+print(f'The number of columns: {len(data.columns)}')
+#print(data.columns)
+
+# Opbouw Columns: [PREDICT]_[original]_[featuregroep]_[maat]_[statistiek]_[dimensie/filter]
+
+#%% Import packages
+# Import packages
+# Data loading
+from worclipo.load_data import load_data
+
+# Core
+import numpy as np
+import pandas as pd
+
+# Sklearn - model selection
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
+
+# Sklearn - preprocessing & pipeline
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif, RFE, SelectFromModel
+from sklearn.decomposition import PCA
+from sklearn.base import BaseEstimator, TransformerMixin, clone
+
+# Sklearn - models
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+
+# Sklearn - metrics
+from sklearn.metrics import roc_auc_score, roc_curve
+
+# Plotting
+import matplotlib.pyplot as plt   
+
+from sklearn.model_selection import RepeatedStratifiedKFold
+
+#%% Train-Test Split
+y = data.iloc[:, 0]
+X = data.iloc[:, 1:]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.2,
+    stratify=y,
+    random_state=42
+)
+
+print(f"Trainset: {X_train.shape}")
+print(f"Testset: {X_test.shape}")
+
+
+#%% Clipper (pipeline-safe)
+class Clipper(BaseEstimator, TransformerMixin):
+    def __init__(self, lower=0.01, upper=0.99):
+        self.lower = lower
+        self.upper = upper
+
+    def fit(self, X, y=None):
+        self.lower_bounds_ = np.quantile(X, self.lower, axis=0)
+        self.upper_bounds_ = np.quantile(X, self.upper, axis=0)
+        return self
+
+    def transform(self, X):
+        return np.clip(X, self.lower_bounds_, self.upper_bounds_)
+
+
+#%% Pipeline
+pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("clipper", Clipper(0.01, 0.99)),
+    ("variance", VarianceThreshold(threshold=0.0)),
+    ("feature_selection", SelectFromModel(
+        RandomForestClassifier(n_estimators=100, random_state=42),
+        threshold="2*mean"
+    )),
+    ("model", RandomForestClassifier(random_state=42))
+])
+
+
+#%% Hyperparameter tuning
+cv = RepeatedStratifiedKFold(
+    n_splits=5,
+    n_repeats=5,
+    random_state=42
+)
+
+param_dist = {
+    "model__n_estimators": [100, 200, 300],
+    "model__max_depth": [3, 5, 7],             
+    "model__min_samples_split": [5, 10, 15],    
+    "model__min_samples_leaf": [4, 6, 10],      
+    "model__max_features": ["sqrt", 0.3, 0.5]  
+}
+
+
+search = RandomizedSearchCV(
+    pipeline,
+    param_distributions=param_dist,
+    n_iter=25,
+    cv=cv,
+    scoring="roc_auc",
+    n_jobs=-1,
+    random_state=42
+)
+
+
+#%% Train model
+search.fit(X_train, y_train)
+
+print("Best params:", search.best_params_)
+print("CV ROC-AUC:", search.best_score_)
+
+
+#%% Best model
+best_model = search.best_estimator_
+
+
+#%% ROC-AUC op test set
+y_proba = best_model.predict_proba(X_test)[:, 1]
+
+roc = roc_auc_score(y_test, y_proba)
+print("Test ROC-AUC:", roc)
+
+
+#%% ROC curve plot
+fpr, tpr, _ = roc_curve(y_test, y_proba, pos_label="liposarcoma")
+
+plt.plot(fpr, tpr)
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve")
+plt.show()
+
+
+#%% Overfitting check
+train_roc = roc_auc_score(y_train, best_model.predict_proba(X_train)[:, 1])
+test_roc = roc
+
+print("Train ROC-AUC:", train_roc)
+print("Test ROC-AUC:", test_roc)
+# %%
+from sklearn.model_selection import cross_val_score
+
+scores = cross_val_score(pipeline, X, y, cv=cv, scoring="roc_auc")
+print(scores.mean(), scores.std())
+
+selected = best_model.named_steps["feature_selection"].get_support()
+print("Aantal features:", selected.sum())
