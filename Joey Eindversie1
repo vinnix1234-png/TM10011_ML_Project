@@ -184,8 +184,8 @@ def plot_mean_roc_with_variability(roc_dict, title):
 #%% Nested CV
 # Nested CV
 # Cross-validaties
-outer_cv = StratifiedKFold(n_splits=5, random_state=42)
-inner_cv = StratifiedKFold(n_splits=5, random_state=42)
+outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)   # shuffle=True moet, anders error op random_state
+inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 # Resultaten opslaan
 results = []
