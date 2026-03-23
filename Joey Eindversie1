@@ -14,12 +14,14 @@ print(f'The number of columns: {len(data.columns)}')
 # Import packages
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import RobustScaler
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.metrics import roc_curve, auc
 
 # Classifiers
 from sklearn.linear_model import LogisticRegression
@@ -39,7 +41,7 @@ X = data.iloc[:, 1:]    # Features
 
 # Dictionary met classifiers
 classifiers = {
-    "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),        
+    "Logistic Regression": LogisticRegression(max_iter=20000, random_state=42),        
     "Random Forest": RandomForestClassifier(random_state=42),
     "XGBoost": XGBClassifier(random_state=42, eval_metric='logloss', verbosity=0)
 }
@@ -77,18 +79,19 @@ hyperparameter_grids = {
 #%% Extra functies 
 # Extra functies
 # Functie voor pakken feature selection methodes per classifier 
-def get_feature_selection_methods(classifier):
-    return {
-    "SelectKBest": SelectKBest(f_classif, k=10),
-    "PCA": PCA(n_components=10),
-    "SelectFromModel": SelectFromModel(clone(classifier), max_features=10),
-    "RFE": RFE(clone(classifier), n_features_to_select=10)      # step=10
+def get_feature_selection_methods(classifier, clf_name):
+    methods = {
+        "None": None,
+        "SelectKBest": SelectKBest(f_classif, k=10),
+        "SelectFromModel": SelectFromModel(clone(classifier), max_features=10),      
     }
-    # # PCA alleen voor Logistic Regression
-    # if clf_name == "Logistic Regression":
-    #     methods["PCA"] = PCA(n_components=10)
+    
+    # PCA en RFE alleen voor Logistic Regression
+    if clf_name == "Logistic Regression":
+        methods["PCA"] = PCA(n_components=10)
+        methods["RFE"] = RFE(clone(classifier), n_features_to_select=10)        # step=10
 
-    # return methods
+    return methods
 
 # Outliers verwijderen 
 class Clipper(BaseEstimator, TransformerMixin):
@@ -120,34 +123,81 @@ class CorrelationFilter(BaseEstimator, TransformerMixin):
     def transform(self, X):
         return pd.DataFrame(X).drop(columns=self.to_drop).values      # Verwijderen van de features
 
+# Functie voor het plotten van de ROC-curve
+def plot_mean_roc_with_variability(roc_dict, title):
+    mean_fpr = np.linspace(0, 1, 100)
+    interp_tprs = []
+
+    plt.figure(figsize=(7, 7))
+
+    # Plot ROC-curves van individuele folds
+    for i, (fpr, tpr, fold_auc) in enumerate(zip(roc_dict["fprs"], roc_dict["tprs"], roc_dict["aucs"])):
+        plt.plot(
+            fpr, tpr,
+            linestyle="--",
+            lw=1,
+            alpha=0.4,
+            label=f"ROC fold {i+1} (AUC = {fold_auc:.2f})"
+        )
+
+        interp_tpr = np.interp(mean_fpr, fpr, tpr)
+        interp_tpr[0] = 0.0
+        interp_tprs.append(interp_tpr)
+
+    # Gemiddelde ROC
+    mean_tpr = np.mean(interp_tprs, axis=0)
+    mean_tpr[-1] = 1.0
+    mean_auc = auc(mean_fpr, mean_tpr)
+    std_auc = np.std(roc_dict["aucs"])
+
+    plt.plot(
+        mean_fpr, mean_tpr,
+        color="blue",
+        lw=2.5,
+        label=f"Mean ROC (AUC = {mean_auc:.2f} ± {std_auc:.2f})"
+    )
+
+    # Variabiliteit
+    std_tpr = np.std(interp_tprs, axis=0)
+    tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
+    tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
+
+    plt.fill_between(
+        mean_fpr,
+        tprs_lower,
+        tprs_upper,
+        color="grey",
+        alpha=0.2,
+        label="± 1 std. dev."
+    )
+
+    # Chance line
+    plt.plot([0, 1], [0, 1], linestyle="--", color="black", lw=2, label="Chance level (AUC = 0.5)")
+
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title(f"Mean ROC curve with variability\n{title}")
+    plt.legend(loc="lower right")
+    plt.grid(alpha=0.3)
+    plt.show()
+
 #%% Nested CV
 # Nested CV
 # Cross-validaties
-outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+outer_cv = StratifiedKFold(n_splits=5, random_state=42)
+inner_cv = StratifiedKFold(n_splits=5, random_state=42)
 
 # Resultaten opslaan
 results = []
 
+# Dictionary voor ROC-data
+roc_data = {}
+
 # Nested CV
 for clf_name, clf in classifiers.items():
-    feature_selection_methods = get_feature_selection_methods(clf)
+    feature_selection_methods = get_feature_selection_methods(clf, clf_name)
 
-    for fs_name, fs in feature_selection_methods.items():
-        # Sla de XGBoost met RFE over, duurt te lang
-        if fs_name == "RFE" and clf_name == "XGBoost":
-            print(f"XGBoost + RFE overgeslagen, want is te zwaar")
-            results.append({
-                "Classifier": clf_name,
-                "Feature Selection": fs_name,
-                "Outer Fold": None,
-                "Outer AUC": float('nan'),
-                "Inner Mean AUC": float('nan'),
-                "Inner Std AUC": float('nan'),
-                "Best Hyperparameters": None
-            })
-            continue
-        
+    for fs_name, fs in feature_selection_methods.items():      
         print(f"Begonnen met de Nested CV van {clf_name} en {fs_name}")
 
         try:
@@ -166,7 +216,7 @@ for clf_name, clf in classifiers.items():
                     ("outliers", Clipper(0.01, 0.99)),
                     ("variance", VarianceThreshold(threshold=0.1)),
                     ("correlation", CorrelationFilter(threshold=0.8)),
-                    ("feature_selection", clone(fs)),
+                    ("feature_selection", clone(fs) if fs is not None else "passthrough"),
                     ("classifier", clone(clf))      # Frisse kopie bij elke iteratie
                 ])
 
@@ -187,7 +237,30 @@ for clf_name, clf in classifiers.items():
                 inner_loop_hyperparametertuning.fit(X_outer_train, y_outer_train)
 
                 # Evalueer beste model op de outer testset
-                outer_auc = inner_loop_hyperparametertuning.score(X_outer_test, y_outer_test)
+                #outer_auc = inner_loop_hyperparametertuning.score(X_outer_test, y_outer_test)
+                
+                # Beste model uit de inner loop
+                best_model = inner_loop_hyperparametertuning.best_estimator_
+
+                # Predict probabilities op outer testset
+                y_outer_proba = best_model.predict_proba(X_outer_test)[:, 1]
+
+                # ROC-curve voor deze outer fold
+                fpr, tpr, _ = roc_curve(y_outer_test, y_outer_proba)
+                outer_auc = auc(fpr, tpr)
+
+                # ROC-data opslaan per classifier + feature selection
+                key = f"{clf_name} + {fs_name}"
+                if key not in roc_data:
+                    roc_data[key] = {
+                        "fprs": [],
+                        "tprs": [],
+                        "aucs": []
+                    }
+
+                roc_data[key]["fprs"].append(fpr)
+                roc_data[key]["tprs"].append(tpr)
+                roc_data[key]["aucs"].append(outer_auc)
 
                 # Resultaten opslaan
                 results.append({
@@ -229,10 +302,12 @@ print(results_df.to_string())
 print("\nSamenvatting gesorteerd op classifier + feature selection:")
 print(summary_df.to_string())
 
+for key, roc_dict in roc_data.items():
+    if len(roc_dict["fprs"]) > 0:
+        plot_mean_roc_with_variability(roc_dict, key)
+        
 #%%
-import matplotlib.pyplot as plt
 from sklearn.model_selection import learning_curve
-from sklearn.metrics import roc_curve, auc
 
 # Learning curve functie uit E3.3
 def plot_learning_curve(estimator, title, X, y, axes, ylim=None, cv=None,
@@ -325,29 +400,4 @@ def plot_learning_curve(estimator, title, X, y, axes, ylim=None, cv=None,
 
     return plt
 
-# ROC Curve functie uit E3.3
-def plot_roc_curve(y_score, y_truth):
-    '''
-    Plot an ROC curve.
-    '''
-    # Only take scores for class = 1
-    y_score = y_score[:, 1]
-
-    # Compute ROC curve and ROC area for each class
-    fpr, tpr, _ = roc_curve(y_truth, y_score)
-    roc_auc = auc(fpr, tpr)
-
-    # Plot the ROC curve
-    plt.figure()
-    lw = 2
-    plt.plot(fpr, tpr, color='darkorange',
-             lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
-    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver operating characteristic example')
-    plt.legend(loc="lower right")
-    plt.show()
 # %%
