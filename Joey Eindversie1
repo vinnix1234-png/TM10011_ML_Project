@@ -17,7 +17,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, LabelEncoder
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -38,6 +38,10 @@ from sklearn.base import clone      # Tijdens SelectFromModel en RFE wordt model
 # Data opslitsen in labels en features
 y = data.iloc[:, 0]     # Labels
 X = data.iloc[:, 1:]    # Features
+
+# Labels omzetten om aan te geven wat positief label is voor roc_curve functie
+labelencoder = LabelEncoder()
+y = labelencoder.fit_transform(y)  # 'lipoma' → 0, 'liposarcoma' → 1
 
 # Dictionary met classifiers
 classifiers = {
@@ -207,8 +211,8 @@ for clf_name, clf in classifiers.items():
                 # De rijen staan voor de samples
                 X_outer_train = X.iloc[outer_train_rijen]
                 X_outer_test = X.iloc[outer_test_rijen]     
-                y_outer_train = y.iloc[outer_train_rijen]
-                y_outer_test = y.iloc[outer_test_rijen]
+                y_outer_train = y[outer_train_rijen]        # Geen .iloc meer nodig, door LabelEncoder is het nu een array geworden.
+                y_outer_test = y[outer_test_rijen]
 
                 # Pipeline 
                 pipeline = Pipeline([
@@ -305,7 +309,7 @@ print(summary_df.to_string())
 for key, roc_dict in roc_data.items():
     if len(roc_dict["fprs"]) > 0:
         plot_mean_roc_with_variability(roc_dict, key)
-        
+
 #%%
 from sklearn.model_selection import learning_curve
 
