@@ -50,28 +50,40 @@ classifiers = {
     "XGBoost": XGBClassifier(random_state=42, eval_metric='logloss', verbosity=0)
 }
 
+# Hyperparameters voor aantal features
+hyperparameter_grids_feature_selection = {
+    "SelectKBest": {"feature_selection__k": [5, 10, 15, 20]},
+    "RFE": {"feature_selection__n_features_to_select": [5, 10, 15, 20]},
+    "SelectFromModel": {"feature_selection__max_features": [5, 10, 15, 20]},
+    "PCA": {"feature_selection__n_components": [5, 10, 15, 20]},
+    "None": {}
+}
+
 # Dictionary met hyperparameters van classifiers
 # Logistic Regression hyperparameters
 hyperparameter_grid_logistic_regression = {
-    'C': [0.001, 0.01, 0.1, 1, 10, 100],
+    'C': [0.0001, 0.001, 0.01, 0.1, 1, 10, 100],
     'solver': ['saga'],         # Saga ondersteunt alle drie
-    'l1_ratio': [0.0, 0.1, 0.5, 0.9, 1.0]   # 0.0 = L2, 1.0 = L1, tussenin = elasticnet, penalty hoeft niet.
+    'l1_ratio': [0.0, 0.05, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]   # 0.0 = L2, 1.0 = L1, tussenin = elasticnet, penalty hoeft niet.
 }
 # Random Forest hyperparameters
 hyperparameter_grid_random_forest = {
-    'n_estimators': [200, 300, 500],         # Aantal bomen
+    'n_estimators': [200, 300, 500, 800],         # Aantal bomen
     'max_depth': [3, 4, 5],         # Diepte van de bomen
-    'min_samples_split': [10, 15, 20],        # Minimum samples om een node te splitsen
-    'min_samples_leaf': [6, 8, 10],          # Minimum samples in een leaf node
+    'min_samples_split': [2, 5, 10, 15, 20],        # Minimum samples om een node te splitsen
+    'min_samples_leaf': [2, 4, 6, 8, 10],          # Minimum samples in een leaf node
     'max_features': ['sqrt', 0.2, 0.3],      # Aantal features om te overwegen voor splitsing
     'max_samples': [0.7, 0.8]
 }
 # XGBoost hyperparameters
 hyperparameter_grid_xgboost = {
-    'n_estimators': [50, 100, 200],         # nrounds
-    'learning_rate': [0.01, 0.05, 0.1],     # eta
+    'n_estimators': [50, 100, 200, 300],         # nrounds
+    'learning_rate': [0.01, 0.05, 0.1, 0.5],     # eta
     'gamma': [0, 0.1, 0.3, 0.5],            # minimum loss reduction
-    'max_depth': [3, 4, 5]              # klein vanwege kleine dataset
+    'max_depth': [3, 4, 5],              # klein vanwege kleine dataset
+    'subsample': [0.6, 0.7, 0.8],
+    'min_child_weight': [2, 3, 5, 10],
+    'colsample_bytree': [0.3, 0.5, 0.7, 0.9]
 }
 # Koppelen van hyperparameters aan classifiers
 hyperparameter_grids = {
@@ -188,7 +200,7 @@ def plot_mean_roc_with_variability(roc_dict, title):
 #%% Nested CV
 # Nested CV
 # Cross-validaties
-outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)   # shuffle=True moet, anders error op random_state
+outer_cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)   # shuffle=True moet, anders error op random_state
 inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 # Resultaten opslaan
@@ -227,6 +239,8 @@ for clf_name, clf in classifiers.items():
                 # Dit is prefix voor hyperparameters en pipeline, komt door dat dictionary in dictionary is soort van
                 # k = parameternaam, v = lijst met waarden
                 hyperparameter_grid = {f"classifier__{k}": v for k, v in hyperparameter_grids[clf_name].items()}
+                # Feature selection parameters samenvoegen
+                hyperparameter_grid.update(hyperparameter_grids_feature_selection[fs_name])
 
                 # Inner loop voor hyperparametertuning met Gridsearch op outer trainset
                 inner_loop_hyperparametertuning = GridSearchCV(
@@ -404,4 +418,4 @@ def plot_learning_curve(estimator, title, X, y, axes, ylim=None, cv=None,
 
     return plt
 
-# %%
+#%%
