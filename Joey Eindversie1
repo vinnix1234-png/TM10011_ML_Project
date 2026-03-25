@@ -15,8 +15,9 @@ print(f'The number of columns: {len(data.columns)}')
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import gc
 
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, LearningCurveDisplay, ShuffleSplit
 from sklearn.preprocessing import RobustScaler, LabelEncoder
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.pipeline import Pipeline
@@ -25,7 +26,7 @@ from sklearn.metrics import roc_curve, auc
 
 # Classifiers
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from xgboost import XGBClassifier
 
 # Feature selection methodes
@@ -47,7 +48,7 @@ y = labelencoder.fit_transform(y)  # 'lipoma' → 0, 'liposarcoma' → 1
 classifiers = {
     "Logistic Regression": LogisticRegression(max_iter=20000, random_state=42),        
     "Random Forest": RandomForestClassifier(random_state=42),
-    "XGBoost": XGBClassifier(random_state=42, eval_metric='logloss', verbosity=0)
+    "XGBoost": XGBClassifier(tree_method='hist', random_state=42, eval_metric='logloss', verbosity=0)
 }
 
 # Hyperparameters voor aantal features
@@ -243,16 +244,24 @@ for clf_name, clf in classifiers.items():
                 hyperparameter_grid.update(hyperparameter_grids_feature_selection[fs_name])
 
                 # Inner loop voor hyperparametertuning met Gridsearch op outer trainset
-                inner_loop_hyperparametertuning = GridSearchCV(
+                inner_loop_hyperparametertuning = RandomizedSearchCV(
                     pipeline, 
-                    param_grid=hyperparameter_grid,
+                    param_distributions=hyperparameter_grid,
+                    n_iter=100,
                     cv=inner_cv,
                     scoring='roc_auc',
                     n_jobs=-1,
+                    random_state=42,
                     error_score='raise'
                 )
                 
                 inner_loop_hyperparametertuning.fit(X_outer_train, y_outer_train)
+
+                # Bekijken van overgebleven features per fold
+                best_pipeline = inner_loop_hyperparametertuning.best_estimator_
+                n_features_after_variance = best_pipeline.named_steps["variance"].get_support().sum()       # Telt hoeveel features overblijven na de VarianceThreshold
+                X_after_variance = best_pipeline.named_steps["variance"].transform(X_outer_train)
+                n_features_after_correlation = best_pipeline.named_steps["correlation"].transform(X_after_variance).shape[1]
 
                 # Evalueer beste model op de outer testset
                 #outer_auc = inner_loop_hyperparametertuning.score(X_outer_test, y_outer_test)
@@ -284,6 +293,8 @@ for clf_name, clf in classifiers.items():
                 results.append({
                     "Classifier": clf_name,
                     "Feature Selection": fs_name,
+                    "Features after Variance": n_features_after_variance,
+                    "Features after Correlation": n_features_after_correlation,
                     "Outer Fold": outer_fold,
                     "Outer AUC": outer_auc,
                     "Inner Mean AUC": inner_loop_hyperparametertuning.best_score_,
@@ -292,10 +303,18 @@ for clf_name, clf in classifiers.items():
                 })
                 print(f"    {clf_name} + {fs_name} ==> fold {outer_fold} afgerond")
 
+                # opruimen van tijdelijke variabelen
+                del best_model, inner_loop_hyperparametertuning
+                del X_outer_train, X_outer_test, y_outer_train, y_outer_test
+                del best_pipeline,n_features_after_variance, n_features_after_correlation, X_after_variance
+                gc.collect()
+
         except Exception as e:
             results.append({
                 "Classifier": clf_name,
                 "Feature Selection": fs_name,
+                "Features after Variance": None,
+                "Features after Correlation": None,
                 "Outer Fold": None,
                 "Outer AUC": float('nan'),
                 "Inner Mean AUC": float('nan'),
@@ -324,98 +343,150 @@ for key, roc_dict in roc_data.items():
     if len(roc_dict["fprs"]) > 0:
         plot_mean_roc_with_variability(roc_dict, key)
 
-#%%
-from sklearn.model_selection import learning_curve
+#%% Voting Classifier
+# Voting Classifier met beste configuratie per classifier
 
-# Learning curve functie uit E3.3
-def plot_learning_curve(estimator, title, X, y, axes, ylim=None, cv=None,
-                        n_jobs=None, train_sizes=np.linspace(.1, 1.0, 5)):
-    """
-    Generate 3 plots: the test and training learning curve, the training
-    samples vs fit times curve, the fit times vs score curve.
+# Beste configuratie per classifier (handmatig invullen na resultaten)
+best_configuration = {
+    "Logistic Regression": {
+        "feature_selection": None,
+        "hyperparameters": {
+            'C': ,
+            'solver': ,         
+            'l1_ratio': 
+        }
+    },
+    "Random Forest": {
+        "feature_selection": None,         
+        "hyperparameters": {
+            'n_estimators': ,         
+            'max_depth': ,      
+            'min_samples_split': ,        
+            'min_samples_leaf': ,  
+            'max_features': ,      
+            'max_samples': 
+        }                        
+    },
+    "XGBoost": {
+        "feature_selection": None,          
+        "hyperparameters": {
+            'n_estimators': ,        
+            'learning_rate': ,    
+            'gamma': ,           
+            'max_depth': ,             
+            'subsample': ,
+            'min_child_weight': ,
+            'colsample_bytree': 
+        }                        
+    }
+}
 
-    Parameters
-    ----------
-    estimator : object type that implements the "fit" and "predict" methods
-        An object of that type which is cloned for each validation.
+# Pipelines bouwen per classifier met beste configuratie
+logistic_regression_pipeline = Pipeline([
+    ("scaler", RobustScaler()),
+    ("outliers", Clipper(0.01, 0.99)),
+    ("variance", VarianceThreshold(threshold=0.1)),
+    ("correlation", CorrelationFilter(threshold=0.8)),
+    ("feature_selection", best_configuration["Logistic Regression"]["feature_selection"] or "passthrough"),
+    ("classifier", LogisticRegression(max_iter=20000, random_state=42, 
+                                      **best_configuration["Logistic Regression"]["hyperparameters"]))      # ** is een Python "unpacking" operator. Het pakt een dictionary uit en zet alle key-value paren om naar losse argumenten.
+])
 
-    title : string
-        Title for the chart.
+random_forest_pipeline = Pipeline([
+    ("scaler", RobustScaler()),
+    ("outliers", Clipper(0.01, 0.99)),
+    ("variance", VarianceThreshold(threshold=0.1)),
+    ("correlation", CorrelationFilter(threshold=0.8)),
+    ("feature_selection", best_configuration["Random Forest"]["feature_selection"] or "passthrough"),
+    ("classifier", RandomForestClassifier(random_state=42, 
+                                          **best_configuration["Random Forest"]["hyperparameters"]))
+])
 
-    X : array-like, shape (n_samples, n_features)
-        Training vector, where n_samples is the number of samples and
-        n_features is the number of features.
+xgboost_pipeline = Pipeline([
+    ("scaler", RobustScaler()),
+    ("outliers", Clipper(0.01, 0.99)),
+    ("variance", VarianceThreshold(threshold=0.1)),
+    ("correlation", CorrelationFilter(threshold=0.8)),
+    ("feature_selection", best_configuration["XGBoost"]["feature_selection"] or "passthrough"),
+    ("classifier", XGBClassifier(tree_method='hist', random_state=42, 
+                                 eval_metric='logloss', verbosity=0,
+                                 **best_configuration["XGBoost"]["hyperparameters"]))
+])
 
-    y : array-like, shape (n_samples) or (n_samples, n_features), optional
-        Target relative to X for classification or regression;
-        None for unsupervised learning.
+# Voting Classifier
+voting_clf = VotingClassifier(
+    estimators=[
+        ("Logistic Regression", logistic_regression_pipeline),
+        ("Random Forest", random_forest_pipeline),
+        ("XGBoost", xgboost_pipeline)
+    ],
+    voting='soft'       # Op basis van kans     
+)
 
-    axes : array of 3 axes, optional (default=None)
-        Axes to use for plotting the curves.
+# Resultaten opslaan van voting
+roc_data_voting = {"fprs": [], "tprs": [], "aucs": []}
 
-    ylim : tuple, shape (ymin, ymax), optional
-        Defines minimum and maximum yvalues plotted.
+# Evalueren met outer CV
+print("Begonnen met de Nested CV van Voting Classifier")
+for outer_fold, (outer_train_rijen, outer_test_rijen) in enumerate(outer_cv.split(X, y), start=1):
+    
+    X_outer_train = X.iloc[outer_train_rijen]
+    X_outer_test = X.iloc[outer_test_rijen]
+    y_outer_train = y[outer_train_rijen]
+    y_outer_test = y[outer_test_rijen]
+    
+    voting_clf.fit(X_outer_train, y_outer_train)
+    
+    y_proba = voting_clf.predict_proba(X_outer_test)[:, 1]
+    
+    fpr, tpr, _ = roc_curve(y_outer_test, y_proba)
+    fold_auc = auc(fpr, tpr)
+    
+    roc_data_voting["fprs"].append(fpr)
+    roc_data_voting["tprs"].append(tpr)
+    roc_data_voting["aucs"].append(fold_auc)
+    
+    print(f"    Voting Classifier ==> fold {outer_fold} afgerond")
+    
+    del X_outer_train, X_outer_test, y_outer_train, y_outer_test
+    gc.collect()
 
-    cv : int, cross-validation generator or an iterable, optional
-        Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
-          - None, to use the default 5-fold cross-validation,
-          - integer, to specify the number of folds.
-          - :term:`CV splitter`,
-          - An iterable yielding (train, test) splits as arrays of indices.
+# Resultaten printen van voting classifier
+print(f"\nVoting Classifier - Mean AUC: {np.mean(roc_data_voting['aucs']):.3f} ± {np.std(roc_data_voting['aucs']):.3f}")
 
-        For integer/None inputs, if ``y`` is binary or multiclass,
-        :class:`StratifiedKFold` used. If the estimator is not a classifier
-        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
+# ROC-curve plotten van voting classifier
+plot_mean_roc_with_variability(roc_data_voting, "Voting Classifier")
 
-        Refer :ref:`User Guide <cross_validation>` for the various
-        cross-validators that can be used here.
+#%% Learning curves
+# Learning curves
+fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(18, 6), sharey=True)
 
-    n_jobs : int or None, optional (default=None)
-        Number of jobs to run in parallel.
-        ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
-        ``-1`` means using all processors. See :term:`Glossary <n_jobs>`
-        for more details.
+common_params = {
+    "X": X,
+    "y": y,
+    "train_sizes": np.linspace(0.1, 1.0, 10),
+    "cv": outer_cv,         # Gebruik de outer loop van nested CV
+    "score_type": "both",
+    "n_jobs": -1,
+    "line_kw": {"marker": "o"},
+    "std_display_style": "fill_between",
+    "score_name": "AUC",
+    "scoring": "roc_auc",       
+}
 
-    train_sizes : array-like, shape (n_ticks,), dtype float or int
-        Relative or absolute numbers of training examples that will be used to
-        generate the learning curve. If the dtype is float, it is regarded as a
-        fraction of the maximum size of the training set (that is determined
-        by the selected validation method), i.e. it has to be within (0, 1].
-        Otherwise it is interpreted as absolute sizes of the training sets.
-        Note that for classification the number of samples usually have to
-        be big enough to contain at least one sample from each class.
-        (default: np.linspace(0.1, 1.0, 5))
-    """
+estimators = [
+    ("Logistic Regression", logistic_regression_pipeline),
+    ("Random Forest", random_forest_pipeline),
+    ("XGBoost", xgboost_pipeline)
+]
 
-    axes.set_title(title)
-    if ylim is not None:
-        axes.set_ylim(*ylim)
-    axes.set_xlabel("Training examples")
-    axes.set_ylabel("Score")
+for ax, (name, estimator) in zip(axes, estimators):
+    LearningCurveDisplay.from_estimator(estimator, **common_params, ax=ax)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles[:2], ["Training Score", "Test Score"])
+    ax.set_title(f"Learning Curve - {name}")
 
-    train_sizes, train_scores, test_scores  = \
-        learning_curve(estimator, X, y, cv=cv, n_jobs=n_jobs,
-                       train_sizes=train_sizes)
-    train_scores_mean = np.mean(train_scores, axis=1)
-    train_scores_std = np.std(train_scores, axis=1)
-    test_scores_mean = np.mean(test_scores, axis=1)
-    test_scores_std = np.std(test_scores, axis=1)
-
-    # Plot learning curve
-    axes.grid()
-    axes.fill_between(train_sizes, train_scores_mean - train_scores_std,
-                         train_scores_mean + train_scores_std, alpha=0.1,
-                         color="r")
-    axes.fill_between(train_sizes, test_scores_mean - test_scores_std,
-                         test_scores_mean + test_scores_std, alpha=0.1,
-                         color="g")
-    axes.plot(train_sizes, train_scores_mean, 'o-', color="r",
-                 label="Training score")
-    axes.plot(train_sizes, test_scores_mean, 'o-', color="g",
-                 label="Cross-validation score")
-    axes.legend(loc="best")
-
-    return plt
+plt.tight_layout()
+plt.show()
 
 #%%
