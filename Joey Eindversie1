@@ -201,7 +201,7 @@ def plot_mean_roc_with_variability(roc_dict, title):
 #%% Nested CV
 # Nested CV
 # Cross-validaties
-outer_cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)   # shuffle=True moet, anders error op random_state
+outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)   # shuffle=True moet, anders error op random_state
 inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 # Resultaten opslaan
@@ -247,7 +247,7 @@ for clf_name, clf in classifiers.items():
                 inner_loop_hyperparametertuning = RandomizedSearchCV(
                     pipeline, 
                     param_distributions=hyperparameter_grid,
-                    n_iter=100,
+                    n_iter=200,
                     cv=inner_cv,
                     scoring='roc_auc',
                     n_jobs=-1,
@@ -261,11 +261,9 @@ for clf_name, clf in classifiers.items():
                 best_pipeline = inner_loop_hyperparametertuning.best_estimator_
                 n_features_after_variance = best_pipeline.named_steps["variance"].get_support().sum()       # Telt hoeveel features overblijven na de VarianceThreshold
                 X_after_variance = best_pipeline.named_steps["variance"].transform(X_outer_train)
-                n_features_after_correlation = best_pipeline.named_steps["correlation"].transform(X_after_variance).shape[1]
+                n_features_after_correlation = best_pipeline.named_steps["correlation"].transform(X_after_variance).shape[1]    # Telt hoeveel featues na CorrelationFilter overblijven
 
-                # Evalueer beste model op de outer testset
-                #outer_auc = inner_loop_hyperparametertuning.score(X_outer_test, y_outer_test)
-                
+                # Evalueer beste model op de outer testset              
                 # Beste model uit de inner loop
                 best_model = inner_loop_hyperparametertuning.best_estimator_
 
@@ -349,34 +347,34 @@ for key, roc_dict in roc_data.items():
 # Beste configuratie per classifier (handmatig invullen na resultaten)
 best_configuration = {
     "Logistic Regression": {
-        "feature_selection": None,
+        "feature_selection": RFE(LogisticRegression(max_iter=20000, random_state=42, C=0.1, solver='saga', l1_ratio=0.0), n_features_to_select=10),     # Waarden ook invullen vanwege de RFE
         "hyperparameters": {
-            'C': ,
-            'solver': ,         
-            'l1_ratio': 
+            'C': 0.1,
+            'solver': 'saga' ,         
+            'l1_ratio': 0.0
         }
     },
     "Random Forest": {
         "feature_selection": None,         
         "hyperparameters": {
-            'n_estimators': ,         
-            'max_depth': ,      
-            'min_samples_split': ,        
-            'min_samples_leaf': ,  
-            'max_features': ,      
-            'max_samples': 
+            'n_estimators': 200,         
+            'max_depth': 4,      
+            'min_samples_split': 10,        
+            'min_samples_leaf': 6,  
+            'max_features': 0.2,      
+            'max_samples': 0.8
         }                        
     },
     "XGBoost": {
         "feature_selection": None,          
         "hyperparameters": {
-            'n_estimators': ,        
-            'learning_rate': ,    
-            'gamma': ,           
-            'max_depth': ,             
-            'subsample': ,
-            'min_child_weight': ,
-            'colsample_bytree': 
+            'n_estimators': 100,        
+            'learning_rate': 0.1,    
+            'gamma': 0.3,           
+            'max_depth': 3,             
+            'subsample': 0.7,
+            'min_child_weight': 3,
+            'colsample_bytree': 0.9
         }                        
     }
 }
