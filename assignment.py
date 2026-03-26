@@ -24,8 +24,21 @@ variances = data.select_dtypes(include="number").var()
 zero_var_cols = variances[variances == 0].index
 data_drop = data.drop(columns=zero_var_cols)
 variances_drop = variances.drop(columns=zero_var_cols)
-print(data_drop)
+#print(data_drop)
 percentage = (variances_drop / variances_drop.sum()) * 100
-print(percentage)
-print(percentage[percentage >= 0.1])
-#print(variances_drop.sort_values(ascending=False))
+#print(percentage)
+#print(percentage[percentage >= 5])
+#print(percentage.sort_values(ascending=False))
+
+variances = data.select_dtypes(include="number").var()
+
+# kolommen met variantie 0 extraheren
+zero_var_cols = variances[variances == 0].index
+
+data_drop = data.drop(columns=zero_var_cols)
+variances_drop = variances.drop(zero_var_cols)
+
+percentage = (variances / variances.sum()) * 100
+
+print(variances.sort_values(ascending=False))
+print(percentage.sort_values(ascending=False))

@@ -1,0 +1,63 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.preprocessing import RobustScaler
+
+# Data inladen
+from worclipo.load_data import load_data
+
+df = load_data()
+
+target_col = "label"
+id_col = "ID"
+
+# Alleen numerieke features schalen
+X = df.drop(columns=[target_col, id_col], errors="ignore")
+X = X.select_dtypes(include=["number"])
+
+# Scalen
+scaler = RobustScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Terug naar DataFrame
+X_scaled = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)
+
+# Alleen numerieke features selecteren
+df_numeric = df.select_dtypes(include=['number'])
+
+# Correlatiematrix berekenen
+corr_matrix = X_scaled.corr()
+
+# Heatmap plotten
+plt.figure(figsize=(16,12))
+sns.heatmap(corr_matrix, cmap="coolwarm", center=0)
+
+plt.title("Correlation Heatmap of All Features")
+plt.tight_layout()
+plt.show()
+
+
+threshold = 0.8
+
+corr_matrix = X_scaled.corr()
+corr_matrix_filtered = corr_matrix[(corr_matrix.abs() > threshold)]
+
+plt.figure(figsize=(16,12))
+sns.heatmap(corr_matrix_filtered, cmap="coolwarm", center=0)
+
+plt.title("Correlation Heatmap (|corr| > 0.8)")
+plt.tight_layout()
+plt.show()
+
+# Alleen bovenste helft van matrix gebruiken (geen dubbele paren)
+upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
+# Threshold instellen
+threshold = 0.8
+
+# Correlaties boven threshold
+high_corr = upper.stack()[upper.stack() > threshold]
+
+# Aantal correlaties
+print("Aantal correlaties > 0.8:", len(high_corr))
