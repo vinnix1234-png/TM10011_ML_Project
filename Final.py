@@ -347,11 +347,11 @@ for key, roc_dict in roc_data.items():
 # Beste configuratie per classifier (handmatig invullen na resultaten)
 best_configuration = {
     "Logistic Regression": {
-        "feature_selection": RFE(LogisticRegression(max_iter=20000, random_state=42, C=1, solver='saga', l1_ratio=0.0), n_features_to_select=10),     # Waarden ook invullen vanwege de RFE
+        "feature_selection": RFE(LogisticRegression(max_iter=20000, random_state=42, C=1, solver='saga', l1_ratio=0.1), n_features_to_select=10),     # Waarden ook invullen vanwege de RFE
         "hyperparameters": {
             'C': 1,
             'solver': 'saga' ,         
-            'l1_ratio': 0.0
+            'l1_ratio': 0.1
         }
     },
     "Random Forest": {
@@ -368,12 +368,12 @@ best_configuration = {
     "XGBoost": {
         "feature_selection": None,          
         "hyperparameters": {
-            'n_estimators': 300,        
+            'n_estimators': 100,        
             'learning_rate': 0.1,    
             'gamma': 0.3,           
             'max_depth': 3,             
             'subsample': 0.7,
-            'min_child_weight': 2,
+            'min_child_weight': 3,
             'colsample_bytree': 0.9
         }                        
     }
